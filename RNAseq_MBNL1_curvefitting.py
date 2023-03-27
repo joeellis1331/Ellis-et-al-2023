@@ -245,52 +245,60 @@ if args.part2 == True:
             #define plus minus symbol for plotting
             plus_minus = (u'\u00B1')
 
-            #RNAseq data
-            #plots actual datapoints with error bars
-            plt.plot(xdata, ydata, 'o', c = 'black')
-            plt.errorbar(xdata, ydata, yerr = yerr, ls = 'none', c = 'black', alpha = 0.5, capsize = 4) #plots errors bars
+            #RNAseq 
+            #use 3 filters before plotting actual curves
+            #residual sum of squares cutoff
+            if df_all.iloc[ind].LogRSS <= 1.5:
+                #cutoff for top and bottom to be realistic
+                if (df_all.iloc[ind].top <= 100.0) and (df_all.iloc[ind].bottom >= 0.0):
+                    #cutoff for slope, lets say 16, thats 2 times stacy's published RT for MBNL2
+                    if df_all.iloc[ind].slope < 16.0:
+                        #plots actual datapoints with error bars
+                        plt.plot(xdata, ydata, 'o', c = 'black')
+                        plt.errorbar(xdata, ydata, yerr = yerr, ls = 'none', c = 'black', alpha = 0.5, capsize = 4) #plots errors bars
 
-            #plot the curve
-            x = numpy.linspace(-0.5, 1.5, num = 100) #returns evenly spaced numbers over a certain interval (start, stop, num = int)
-            if df_all.iloc[ind].IncLevel_avg_d1000 > df_all.iloc[ind].IncLevel_avg_d0:
-                popt = [df_all.iloc[ind].top, df_all.iloc[ind].bottom, df_all.iloc[ind].LogEC50, df_all.iloc[ind].slope]
-            else:
-                popt = [df_all.iloc[ind].bottom, df_all.iloc[ind].top, df_all.iloc[ind].LogEC50, df_all.iloc[ind].slope]
-            y = sigmoid(x, *popt) #fits sigmoid curve to y data
-            plt.plot(x, y,  c = 'orange', label = 'RNAseq fit') #plots sigmoid fit
+                        #plot the curve
+                        x = numpy.linspace(-0.5, 1.5, num = 100) #returns evenly spaced numbers over a certain interval (start, stop, num = int)
+                        if df_all.iloc[ind].IncLevel_avg_d1000 > df_all.iloc[ind].IncLevel_avg_d0:
+                            popt = [df_all.iloc[ind].top, df_all.iloc[ind].bottom, df_all.iloc[ind].LogEC50, df_all.iloc[ind].slope]
+                        else:
+                            popt = [df_all.iloc[ind].bottom, df_all.iloc[ind].top, df_all.iloc[ind].LogEC50, df_all.iloc[ind].slope]
+                        y = sigmoid(x, *popt) #fits sigmoid curve to y data
+                        plt.plot(x, y,  c = 'orange', label = 'RNAseq fit') #plots sigmoid fit
 
-            #appends parameters for table plotting to array
-            top_table = f'{round(max([popt[0], popt[1]]), 1)}{plus_minus}{df_all.iloc[ind].stderr_top}'
-            bottom_table = f'{round(min([popt[0], popt[1]]), 1)}{plus_minus}{df_all.iloc[ind].stderr_bottom}'
-            ec50_table = f'{round(popt[3], 2)}{plus_minus}{df_all.iloc[ind].stderr_LogEC50}'
-            slope_table = f'{round(popt[2], 2)}{plus_minus}{df_all.iloc[ind].stderr_slope}'
-            r_sq_table = f'{round(df_all.iloc[ind].R_sq, 3)}'
-            cellText = [[top_table, bottom_table, ec50_table, slope_table, r_sq_table]] #need extra brackets to create 2D array
-            
-            #plots table
-            colLabels = ['$\\bf{Top}$', '$\\bf{Bottom}$', '$\\bf{Slope}$', '$\\bf{LogEC50}$', '$\\bf{R\u00b2}$'] #uses TeX code
-            colColours = ['lightgrey' for x in range(len(colLabels))]
-            tabl = plt.table(cellText = cellText, cellLoc = 'center', colLabels = colLabels, colColours = colColours, colLoc = 'center', loc = 'top')
-            #allows me to set fontsize
-            tabl.auto_set_font_size(False)
-            tabl.set_fontsize(11.5)
-            #changing cell heights
-            tabl_props = tabl.properties()
-            tabl_cells = tabl_props['children']
-            for cell in tabl_cells: cell.set_height(0.075)
+                        #appends parameters for table plotting to array
+                        top_table = f'{round(max([popt[0], popt[1]]), 1)}{plus_minus}{df_all.iloc[ind].stderr_top}'
+                        bottom_table = f'{round(min([popt[0], popt[1]]), 1)}{plus_minus}{df_all.iloc[ind].stderr_bottom}'
+                        ec50_table = f'{round(popt[3], 2)}{plus_minus}{df_all.iloc[ind].stderr_LogEC50}'
+                        slope_table = f'{round(popt[2], 2)}{plus_minus}{df_all.iloc[ind].stderr_slope}'
+                        r_sq_table = f'{round(df_all.iloc[ind].R_sq, 3)}'
+                        cellText = [[top_table, bottom_table, ec50_table, slope_table, r_sq_table]] #need extra brackets to create 2D array
+                        
+                        #plots table
+                        colLabels = ['$\\bf{Top}$', '$\\bf{Bottom}$', '$\\bf{Slope}$', '$\\bf{LogEC50}$', '$\\bf{R\u00b2}$'] #uses TeX code
+                        colColours = ['lightgrey' for x in range(len(colLabels))]
+                        tabl = plt.table(cellText = cellText, cellLoc = 'center', colLabels = colLabels, colColours = colColours, colLoc = 'center', loc = 'top')
+                        #allows me to set fontsize
+                        tabl.auto_set_font_size(False)
+                        tabl.set_fontsize(11.5)
+                        #changing cell heights
+                        tabl_props = tabl.properties()
+                        tabl_cells = tabl_props['children']
+                        for cell in tabl_cells: cell.set_height(0.075)
 
-            #final plot adjustments
-            plt.subplots_adjust(top = 0.80)
-            plt.legend(loc = 'best')
-            plt.ylabel('PSI', fontsize = 'xx-large')
-            plt.xlabel('log[(dox + 1)]', fontsize = 'xx-large')
-            plt.xticks(ticks = [-0.5, -0.25, 0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5], labels = [-0.5, '', 0, '', 0.5, '', 1.0, '', 1.5], fontsize = 17)
-            plt.yticks(fontsize = 17)
-            plt.title(df_all.iloc[ind].geneSymbol, pad = 40, fontsize = 'xx-large', style = 'italic')
-            plt.tight_layout()
-            name = f'{df_all.iloc[ind].geneSymbol}:{df_all.iloc[ind].exonStart_0base}-{df_all.iloc[ind].exonEnd}'
-            plt.savefig(f'./plots/curve_fits/test/{name}.tiff', dpi = 600, format = 'png')
-            plt.close()
+                        #final plot adjustments
+                        plt.subplots_adjust(top = 0.80)
+                        plt.legend(loc = 'best')
+                        plt.ylabel('PSI', fontsize = 'xx-large')
+                        plt.xlabel('log[(dox + 1)]', fontsize = 'xx-large')
+                        plt.xticks(ticks = [-0.5, -0.25, 0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5], labels = [-0.5, '', 0, '', 0.5, '', 1.0, '', 1.5], fontsize = 17)
+                        plt.yticks(fontsize = 17)
+                        plt.title(f'{df_all.iloc[ind].geneSymbol}', pad = 50, fontsize = 'xx-large', style = 'italic')
+                        plt.suptitle(f'exon coord:{df_all.iloc[ind].exonStart_0base}-{df_all.iloc[ind].exonEnd}', x = 0.55, y = 0.84, fontsize = 'xx-large')
+                        plt.tight_layout()
+                        name = f'{df_all.iloc[ind].geneSymbol}_{df_all.iloc[ind].exonStart_0base}-{df_all.iloc[ind].exonEnd}'
+                        plt.savefig(f'./plots/curve_fits/{name}.tiff', dpi = 300, format = 'tiff')
+                        plt.close()
 
         
         #reads in dataframe
