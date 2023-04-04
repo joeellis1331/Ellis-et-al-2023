@@ -7,12 +7,15 @@ import matplotlib
 import matplotlib.pyplot as plt
 import seaborn as sns
 import math
+import statistics
 import scipy
 from scipy.optimize import curve_fit
 from Bio import SeqIO
 from collections import Counter
 from maxentpy import maxent
 from maxentpy.maxent import load_matrix5, load_matrix3
+import itertools
+from scipy.stats import norm
 
 #set up ArgumentParser
 parser = argparse.ArgumentParser(description = "post curve fit stuff")
@@ -37,8 +40,7 @@ matplotlib.rcParams['font.family'] = 'sans-serif'
 '''Generates curve fits first and saves to file
 uses that data to then plot curves for original events (no dilutions etc) with table of values on top
 '''
-if args.part2 == True:
-
+if args.part1 == True:
     df_all = pandas.read_excel('/mnt/c/Users/joeel/Desktop/Transient_Coreg_Files/NEW_bioinfo/HEK/MBNLeventlist_curveValidation_HEK_original.xlsx', sheet_name = 0, index_col = 0)
     df_all = df_all.dropna()
 
@@ -64,9 +66,12 @@ if args.part2 == True:
     def get_curve_data(row):
         '''x data is log(dose + 1) so the 0 point can be used
         also the final cellular concentration is 100 fold less! couldnt name variables with a decimal! (eg. d100 --> d1)'''
-        xdata = [math.log10(1), math.log10(2), math.log10(2.7), math.log10(3.5), math.log10(3.8), math.log10(11)]
-        ydata = [row.IncLevel_avg_d0, row.IncLevel_avg_d100, row.IncLevel_avg_d170, row.IncLevel_avg_d250, row.IncLevel_avg_d280, row.IncLevel_avg_d1000]
-
+        #set x and y data
+        xdata = list(itertools.repeat(math.log10(1), len(row.IncLevel_d0))) + list(itertools.repeat(math.log10(2), len(row.IncLevel_d100)))\
+            + list(itertools.repeat(math.log10(2.7), len(row.IncLevel_d170))) + list(itertools.repeat(math.log10(3.5), len(row.IncLevel_d250)))\
+            + list(itertools.repeat(math.log10(3.8), len(row.IncLevel_d280))) + list(itertools.repeat(math.log10(11), len(row.IncLevel_d1000)))
+        ydata = row.IncLevel_d0 + row.IncLevel_d100 + row.IncLevel_d170 + row.IncLevel_d250 + row.IncLevel_d280 + row.IncLevel_d1000
+       
         ############## find std dev for each set of samples #####################################
         yerr = [numpy.std(row.IncLevel_d0), numpy.std(row.IncLevel_d100), numpy.std(row.IncLevel_d170),
                 numpy.std(row.IncLevel_d250), numpy.std(row.IncLevel_d280), numpy.std(row.IncLevel_d1000)]
@@ -110,7 +115,7 @@ if args.part2 == True:
             df_all.at[row.Index, 'total_sumsq'] = ss_res
             df_all.at[row.Index, 'R_sq'] = r_squared
             df_all.at[row.Index, 'LogRSS'] = math.log10(ss_res)
-
+                
             #standard error calculation, list (standard deviation / sqrt(# samples))
             stderr = numpy.sqrt(numpy.diag(pcov))/numpy.sqrt(len(ydata))
             #appends paramters to DataFrame
@@ -118,6 +123,18 @@ if args.part2 == True:
             df_all.at[row.Index, 'stderr_bottom'] = round(stderr[1], 1)
             df_all.at[row.Index, 'stderr_LogEC50'] = round(stderr[2], 2)
             df_all.at[row.Index, 'stderr_slope'] = round(stderr[3], 1)
+
+             #confidence interval calculations
+            def calc_ci(ci, param, stderr):
+                z = norm.ppf((1.0 + ci)/2)
+                lower_ci = param - (z * stderr)
+                upper_ci = param + (z * stderr)
+                return lower_ci, upper_ci
+            
+            df_all.at[row.Index, 'top_lowCI'], df_all.at[row.Index, 'top_upCI'] = calc_ci(0.95, (max([popt[0], popt[1]])), stderr[0])
+            df_all.at[row.Index, 'bottom_lowCI'], df_all.at[row.Index, 'bottom_upCI'] = calc_ci(0.95, (min([popt[0], popt[1]])), stderr[1])
+            df_all.at[row.Index, 'LogEC50_lowCI'], df_all.at[row.Index, 'LogEC50_upCI'] = calc_ci(0.95, popt[2], stderr[2])
+            df_all.at[row.Index, 'slope_lowCI'], df_all.at[row.Index, 'slope_upCI'] = calc_ci(0.95, popt[3], stderr[3])
 
             #appends paramters to DataFrame
             df_all.at[row.Index, 'top'] = max([popt[0], popt[1]])
@@ -141,9 +158,6 @@ if args.part2 == True:
         yerr = [numpy.std(df_all.iloc[ind].IncLevel_d0), numpy.std(df_all.iloc[ind].IncLevel_d100), numpy.std(df_all.iloc[ind].IncLevel_d170),
                 numpy.std(df_all.iloc[ind].IncLevel_d250), numpy.std(df_all.iloc[ind].IncLevel_d280), numpy.std(df_all.iloc[ind].IncLevel_d1000)]
 
-        #define plus minus symbol for plotting
-        plus_minus = (u'\u00B1')
-
         #RNAseq data
         if df_all.iloc[ind].method == 'RNAseq':
             #plots actual datapoints with error bars
@@ -160,13 +174,19 @@ if args.part2 == True:
             plt.plot(x, y,  c = 'orange', label = '%s fit' % df_all.iloc[ind].method) #plots sigmoid fit
 
             #appends parameters for table plotting to array
-            top_table = f'{round(max([popt[0], popt[1]]), 1)}{plus_minus}{df_all.iloc[ind].stderr_top}'
-            bottom_table = f'{round(min([popt[0], popt[1]]), 1)}{plus_minus}{df_all.iloc[ind].stderr_bottom}'
-            ec50_table = f'{round(popt[3], 2)}{plus_minus}{df_all.iloc[ind].stderr_LogEC50}'
-            slope_table = f'{round(popt[2], 2)}{plus_minus}{df_all.iloc[ind].stderr_slope}'
-            r_sq_table = f'{round(df_all.iloc[ind].R_sq, 3)}'
-            extend_list = [top_table, bottom_table, ec50_table, slope_table, r_sq_table]
+            top_table = f'{round(max([popt[0], popt[1]]), 1)}'
+            bottom_table = f'{round(min([popt[0], popt[1]]), 1)}'
+            ec50_table = f'{round(popt[3], 2)}'
+            slope_table = f'{round(popt[2], 1)}'
+            r_sq_table = f'{round(df_all.iloc[ind].R_sq, 2)}'
+            top_ci = f'{round(df_all.iloc[ind].top_lowCI, 1)}-{round(df_all.iloc[ind].top_upCI, 1)}'
+            bottom_ci = f'{round(df_all.iloc[ind].bottom_lowCI, 1)}-{round(df_all.iloc[ind].bottom_upCI, 1)}'
+            ec50_ci = f'{round(df_all.iloc[ind].LogEC50_lowCI, 2)}-{round(df_all.iloc[ind].LogEC50_upCI, 2)}'
+            slope_ci = f'{round(df_all.iloc[ind].slope_lowCI, 1)}-{round(df_all.iloc[ind].slope_upCI, 1)}'
+            extend_list = ['RNAseq', 'Best-fit', top_table, bottom_table, ec50_table, slope_table, r_sq_table]
             cellText[0].extend(extend_list)
+            extend_list = [None, '95% CI', top_ci, bottom_ci, slope_ci, ec50_ci, None]
+            cellText[1].extend(extend_list)
 
         #RT-PCR data
         else:
@@ -184,13 +204,19 @@ if args.part2 == True:
             plt.plot(x, y,  c = 'purple', label = '%s fit' % df_all.iloc[ind].method) #plots sigmoid fit
 
             #appends parameters for table plotting to array
-            top_table = f'{round(max([popt[0], popt[1]]), 1)}{plus_minus}{df_all.iloc[ind].stderr_top}'
-            bottom_table = f'{round(min([popt[0], popt[1]]), 1)}{plus_minus}{df_all.iloc[ind].stderr_bottom}'
-            ec50_table = f'{round(popt[3], 2)}{plus_minus}{df_all.iloc[ind].stderr_LogEC50}'
-            slope_table = f'{round(popt[2], 2)}{plus_minus}{df_all.iloc[ind].stderr_slope}'
-            r_sq_table = f'{round(df_all.iloc[ind].R_sq, 3)}'
-            extend_list = [top_table, bottom_table, ec50_table, slope_table, r_sq_table]
-            cellText[1].extend(extend_list)
+            top_table = f'{round(max([popt[0], popt[1]]), 1)}'
+            bottom_table = f'{round(min([popt[0], popt[1]]), 1)}'
+            ec50_table = f'{round(popt[3], 2)}'
+            slope_table = f'{round(popt[2], 1)}'
+            r_sq_table = f'{round(df_all.iloc[ind].R_sq, 2)}'
+            top_ci = f'{round(df_all.iloc[ind].top_lowCI, 1)}-{round(df_all.iloc[ind].top_upCI, 1)}'
+            bottom_ci = f'{round(df_all.iloc[ind].bottom_lowCI, 1)}-{round(df_all.iloc[ind].bottom_upCI, 1)}'
+            ec50_ci = f'{round(df_all.iloc[ind].LogEC50_lowCI, 2)}-{round(df_all.iloc[ind].LogEC50_upCI, 2)}'
+            slope_ci = f'{round(df_all.iloc[ind].slope_lowCI, 1)}-{round(df_all.iloc[ind].slope_upCI, 1)}'
+            extend_list = ['RT-PCR', 'Best-fit', top_table, bottom_table, ec50_table, slope_table, r_sq_table]
+            cellText[2].extend(extend_list)
+            extend_list = [None, '95% CI', top_ci, bottom_ci, slope_ci, ec50_ci, None]
+            cellText[3].extend(extend_list)
 
         name = '%s_%s-%s' % (df_all.iloc[ind].geneSymbol, str(df_all.iloc[ind].exonStart_0base), str(df_all.iloc[ind].exonEnd))
         return name, cellText
@@ -204,18 +230,19 @@ if args.part2 == True:
     #iterates through index tuple
     for tup in ind:
         #2D list for plotting table
-        cellText = [['RNAseq'], ['RT-PCR']]
+        #cellText = [['RNAseq'], ['RT-PCR']]
+        cellText = [[], [], [], []]
         #plots and grabs geneSymbol for chart title
-        name, cellText = plot_curves(tup[0], cellText)
-        name, cellText = plot_curves(tup[1], cellText)
+        name, cellText = plot_curves(tup[0], cellText) #RNAseq
+        name, cellText = plot_curves(tup[1], cellText) #RT-PCR
 
         #plots table
-        colLabels = ['$\\bf{Method}$', '$\\bf{Top}$', '$\\bf{Bottom}$', '$\\bf{Slope}$', '$\\bf{LogEC50}$', '$\\bf{R\u00b2}$'] #uses TeX code
+        colLabels = ['$\\bf{Method}$', None, '$\\bf{Top}$', '$\\bf{Bottom}$', '$\\bf{Slope}$', '$\\bf{LogEC50}$', '$\\bf{R\u00b2}$'] #uses TeX code
         colColours = ['lightgrey' for x in range(len(colLabels))]
         tabl = plt.table(cellText = cellText, cellLoc = 'center', colLabels = colLabels, colColours = colColours, colLoc = 'center', loc = 'top')
         #allows me to set fontsize
         tabl.auto_set_font_size(False)
-        tabl.set_fontsize(11.5)
+        tabl.set_fontsize(10.5)
         #changing cell heights
         tabl_props = tabl.properties()
         tabl_cells = tabl_props['children']
@@ -228,17 +255,17 @@ if args.part2 == True:
         plt.xlabel('log[(dox + 1)]', fontsize = 'xx-large')
         plt.xticks(ticks = [-0.5, -0.25, 0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5], labels = [-0.5, '', 0, '', 0.5, '', 1.0, '', 1.5], fontsize = 17)
         plt.yticks(fontsize = 17)
-        plt.title(df_all.iloc[tup[0]].geneSymbol, pad = 54, fontsize = 'xx-large', style = 'italic')
+        plt.title(df_all.iloc[tup[0]].geneSymbol, pad = 75, fontsize = 'xx-large', style = 'italic')
         plt.tight_layout()
-        plt.savefig(f'./plots/curve_validations/{name}.tiff', dpi = 600, format = 'png')
+        plt.savefig(f'./plots/curve_validations/{name}.tiff', dpi = 600)
         plt.close()
 
     #final fitstats dataframe
-    df_all.to_csv('curveValidation_withfits_original.csv')
+    df_all.to_csv('curveValidation_withfits.csv')
 
 '''compare splicing outcomes between RNAseq and RT_PCR'''
-if args.part3 == True:
-    df_all = pandas.read_csv('curveValidation_withfits_original.csv')
+if args.part2 == True:
+    df_all = pandas.read_csv('curveValidation_withfits.csv')
 
     #needs wonky conversion to get int from the lists which stored as a string from file to run in this script
     def convert_to_list(s):
@@ -253,32 +280,7 @@ if args.part3 == True:
 
     #add deltaPSI columns
     df_all['deltaPSI'] = df_all.apply(lambda x: abs(x['top'] - x['bottom']), axis = 1)
-    #add no log EC50
-    df_all['EC50'] = df_all.apply(lambda x: (10**x['LogEC50']), axis = 1)
-
-
-    #more data for readcounts
-    df_fitstats = pandas.read_pickle('MBNLeventlist_fitstats_HEK.pkl')
-    #adds indexers to merge two dataframes
-    df_fitstats['indexer'] = df_fitstats.apply(lambda x: f'{x.geneSymbol}:{x.exonStart_0base}-{x.exonEnd}', axis = 1)
     df_all['indexer'] = df_all.apply(lambda x: (f'{x.geneSymbol}:{x.exonStart_0base}-{x.exonEnd}'), axis = 1)
-    #only want readcounts
-    df_fitstats = df_fitstats[['indexer','IJC_SAMPLE_1_avg_d0', 'SJC_SAMPLE_1_avg_d0', 'IJC_SAMPLE_2_avg_d100', 'SJC_SAMPLE_2_avg_d100',
-                                'IJC_SAMPLE_2_avg_d170', 'SJC_SAMPLE_2_avg_d170', 'IJC_SAMPLE_2_avg_d250', 'SJC_SAMPLE_2_avg_d250',
-                                'IJC_SAMPLE_2_avg_d280', 'SJC_SAMPLE_2_avg_d280', 'IJC_SAMPLE_2_avg_d1000', 'SJC_SAMPLE_2_avg_d1000']]
-    #merge dfs
-    df_all = df_all.merge(df_fitstats, how = 'inner', on = 'indexer').drop(columns = 'Unnamed: 0')
-
-    #calculate sum of the avg reads for all samples
-    df_all['counts_d0'] = df_all.apply(lambda x: (x.IJC_SAMPLE_1_avg_d0 + x.SJC_SAMPLE_1_avg_d0), axis = 1)
-    df_all['counts_d100'] = df_all.apply(lambda x: (x.IJC_SAMPLE_2_avg_d100 + x.SJC_SAMPLE_2_avg_d100), axis = 1)
-    df_all['counts_d170'] = df_all.apply(lambda x: (x.IJC_SAMPLE_2_avg_d170 + x.SJC_SAMPLE_2_avg_d170), axis = 1)
-    df_all['counts_d250'] = df_all.apply(lambda x: (x.IJC_SAMPLE_2_avg_d250 + x.SJC_SAMPLE_2_avg_d250), axis = 1)
-    df_all['counts_d280'] = df_all.apply(lambda x: (x.IJC_SAMPLE_2_avg_d100 + x.SJC_SAMPLE_2_avg_d280), axis = 1)
-    df_all['counts_d1000'] = df_all.apply(lambda x: (x.IJC_SAMPLE_2_avg_d1000 + x.SJC_SAMPLE_2_avg_d1000), axis = 1)
-    df_all['total_avg_reads'] = df_all.apply(lambda x: (x.IJC_SAMPLE_1_avg_d0 + x.SJC_SAMPLE_1_avg_d0 + x.IJC_SAMPLE_2_avg_d100 + x.SJC_SAMPLE_2_avg_d100 + x.IJC_SAMPLE_2_avg_d170 + x.SJC_SAMPLE_2_avg_d170 + x.IJC_SAMPLE_2_avg_d250 + x.SJC_SAMPLE_2_avg_d250 + x.IJC_SAMPLE_2_avg_d280 + x.SJC_SAMPLE_2_avg_d280 + x.IJC_SAMPLE_2_avg_d1000), axis = 1)
-    df_all['log(total_reads)'] = df_all.apply(lambda x: math.log10(x.total_avg_reads), axis = 1)
-
     #concat the datasets so each even is on a single row
     df_1 = df_all[df_all['method'] == 'RNAseq'].reset_index().add_suffix('_RNAseq')
     df_2 = df_all[df_all['method'] == 'RT-PCR']
@@ -289,8 +291,7 @@ if args.part3 == True:
        'IncLevel_d280', 'IncLevel_d1000', 'IncLevel_avg_d0',
        'IncLevel_avg_d100', 'IncLevel_avg_d170', 'IncLevel_avg_d250',
        'IncLevel_avg_d280', 'IncLevel_avg_d1000', 'method', 'RSS', 'LogRSS',
-       'top', 'bottom', 'LogEC50', 'slope', 'pooled_StDev', 'deltaPSI', 'EC50',
-       'indexer']]
+       'top', 'bottom', 'LogEC50', 'slope', 'pooled_StDev', 'deltaPSI', 'indexer']]
     df_2 = df_2.reset_index().add_suffix('_RT-PCR')
     df_all = pandas.concat([df_1, df_2], axis = 1).drop(columns = 'index_RNAseq')
 
@@ -302,7 +303,7 @@ if args.part3 == True:
         ####################################### plot slope correlations #################################
         #find the min/max value
         min, max = df_all.loc[:, ['slope_RNAseq', 'slope_RT-PCR']].min().min(), df_all.loc[:, ['slope_RNAseq', 'slope_RT-PCR']].max().max()
-        
+        #plot data
         sns.scatterplot(data = df_all, x = 'slope_RNAseq', y = 'slope_RT-PCR')
         #obtain m (slope) and b(intercept) of linear regression line
         m, b, r_value, p_value, std_err = scipy.stats.linregress(df_all['slope_RNAseq'], df_all['slope_RT-PCR'])
@@ -319,24 +320,24 @@ if args.part3 == True:
         m, b, r_sq = "{:.2f}".format(m), "{:.2f}".format(b), "{:.2f}".format(r_sq)
         fit_annot = f'y = {m}x+{b}\nR = {r_value}\np-value = {p_value}'
         bbox = dict(edgecolor = 'black', facecolor = 'grey', alpha = 0.5, boxstyle = 'square,pad=0.25') #sets variable to keep annotate flags clean
-        plt.annotate(fit_annot, xy = (2.5, 11.5), xycoords = 'data', bbox = bbox, fontsize = 13, horizontalalignment = 'left', verticalalignment = 'center')
+        plt.annotate(fit_annot, xy = (1.5, 11.5), xycoords = 'data', bbox = bbox, fontsize = 13, horizontalalignment = 'left', verticalalignment = 'center')
         plt.xlabel('Slope RNAseq', fontsize = 'xx-large')
         plt.ylabel('Slope RT-PCR', fontsize = 'xx-large')
         #set limits for graph
-        plt.ylim(min + 0.5, max + 0.5)
-        plt.xlim(min + 0.5, max + 0.5)
+        plt.ylim(min - 0.5, max + 0.5)
+        plt.xlim(min - 0.5, max + 0.5)
         plt.xticks(fontsize = 17)
         plt.yticks(fontsize = 17)
         plt.title('Slope', fontsize = 'xx-large')
         plt.tight_layout()
-        plt.savefig(f'./plots/curve_validations/RNAseq_vs_RT_slope.tiff', dpi = 600, format = 'png')
+        plt.savefig(f'./plots/curve_validations/RNAseq_vs_RT_slope.tiff', dpi = 600)
         plt.close()
         
         
         ############################### plot LogEC50 correlation #######################################
         #find the min/max value
         min, max = df_all.loc[:, ['LogEC50_RNAseq', 'LogEC50_RT-PCR']].min().min(), df_all.loc[:, ['LogEC50_RNAseq', 'LogEC50_RT-PCR']].max().max()
-        
+        #plot data 
         sns.scatterplot(data = df_all, x = 'LogEC50_RNAseq', y = 'LogEC50_RT-PCR')
         #obtain m (slope) and b(intercept) of linear regression line
         m, b, r_value, p_value, std_err = scipy.stats.linregress(df_all['LogEC50_RNAseq'], df_all['LogEC50_RT-PCR'])
@@ -353,25 +354,24 @@ if args.part3 == True:
         m, b, r_sq = "{:.2f}".format(m), "{:.2f}".format(b), "{:.2f}".format(r_sq)
         fit_annot = f'y = {m}x+{b}\nR = {r_value}\np-value = {p_value}'
         bbox = dict(edgecolor = 'black', facecolor = 'grey', alpha = 0.5, boxstyle = 'square,pad=0.25') #sets variable to keep annotate flags clean
-        plt.annotate(fit_annot, xy = (0.23, 0.89), xycoords = 'data', bbox = bbox, fontsize = 13, horizontalalignment = 'left', verticalalignment = 'center')
+        plt.annotate(fit_annot, xy = (0.15, 0.84), xycoords = 'data', bbox = bbox, fontsize = 13, horizontalalignment = 'left', verticalalignment = 'center')
         plt.xlabel('LogEC50 RNAseq', fontsize = 'xx-large')
         plt.ylabel('LogEC50 RT-PCR', fontsize = 'xx-large')
         #set limits for graph
-        plt.ylim(min + 0.05, max + 0.05)
-        plt.xlim(min + 0.05, max + 0.05)
+        plt.ylim(min - 0.05, max + 0.05)
+        plt.xlim(min - 0.05, max + 0.05)
         plt.xticks(fontsize = 17)
         plt.yticks(fontsize = 17)
         plt.title('LogEC50', fontsize = 'xx-large')
         plt.tight_layout()
-        plt.savefig(f'./plots/curve_validations/RNAseq_vs_RT_LogEC50.tiff', dpi = 600, format = 'png')
+        plt.savefig(f'./plots/curve_validations/RNAseq_vs_RT_LogEC50.tiff', dpi = 600)
         plt.close()
 
-    
         ######################################################################################
         #####                                  plots PSI correlations
         ######################################################################################
 
-        def correlation_scatter(id_vars, hue, labels_only, name, plot_r):
+        def correlation_scatter(id_vars, hue, cbar_title, labels_only, name, plot_r):
             #reorganize dataframe to make xy plot possible
             val_cols_seq = ['IncLevel_avg_d0_RNAseq', 'IncLevel_avg_d100_RNAseq', 'IncLevel_avg_d170_RNAseq', 'IncLevel_avg_d250_RNAseq', 'IncLevel_avg_d280_RNAseq', 'IncLevel_avg_d1000_RNAseq']
             val_cols_rt = ['IncLevel_avg_d0_RT-PCR', 'IncLevel_avg_d100_RT-PCR', 'IncLevel_avg_d170_RT-PCR', 'IncLevel_avg_d250_RT-PCR', 'IncLevel_avg_d280_RT-PCR', 'IncLevel_avg_d1000_RT-PCR']
@@ -379,6 +379,7 @@ if args.part3 == True:
             df2 = pandas.melt(df_all, id_vars = id_vars, value_vars = val_cols_rt, var_name = 'variable_RT-PCR', value_name = 'value_RT-PCR')
             df_xy = pandas.concat([df1, df2], axis = 1) #merges dfs
             df_xy = df_xy.loc[:,~df_xy.columns.duplicated()] #drops duplicate deltaPSI column
+            df_xy.to_csv('test_1.csv')
         
             #this if statement plots the event labels instead of points, know which points belong to which event
             if labels_only == True:
@@ -395,11 +396,12 @@ if args.part3 == True:
                 #if statement to void the issue of None when making a colorbar
                 if hue != None:
                     norm = plt.Normalize(df_xy[hue].min(), df_xy[hue].max())
-                    sm = plt.cm.ScalarMappable(cmap = "Blues_r", norm = norm)
+                    #can set "Blues_r" to reverse color, make sure to adjust in scatter below
+                    sm = plt.cm.ScalarMappable(cmap = "Blues", norm = norm)
                     sm.set_array([])
-                    sns.scatterplot(data = df_xy, x = 'value_RNAseq', y = 'value_RT-PCR', hue = hue, palette = "Blues_r")
-                    title = name.split('_')[-1]
-                    plt.colorbar(sm).set_label(title, fontsize = 15)
+                    sns.scatterplot(data = df_xy, x = 'value_RNAseq', y = 'value_RT-PCR',
+                                     hue = hue, palette = "Blues", edgecolor = 'gray', linewidth = 0.25)
+                    plt.colorbar(sm).set_label(cbar_title, fontsize = 15)
                     plt.legend().remove()
         
                 #in the case of None, plot
@@ -433,311 +435,18 @@ if args.part3 == True:
             plt.xticks(fontsize = 17)
             plt.yticks(fontsize = 17)
             plt.tight_layout()
-            plt.savefig(f'./plots/curve_validations/{name}.tiff', dpi = 600, format = 'png')
+            plt.savefig(f'./plots/curve_validations/{name}.tiff', dpi = 600)
             plt.close()
         
-        correlation_scatter(['deltaPSI_RNAseq', 'geneSymbol_RNAseq'], None, False, 'RNAseq_vs_RT_PSIall', True)
-        correlation_scatter(['deltaPSI_RNAseq', 'geneSymbol_RNAseq'], 'deltaPSI_RNAseq', True, 'RNAseq_vs_RT_PSIall_labelsOnly', True)
+        correlation_scatter(['deltaPSI_RNAseq', 'geneSymbol_RNAseq'], None, None, False, 'RNAseq_vs_RT_PSIall', True)
+        correlation_scatter(['deltaPSI_RNAseq', 'geneSymbol_RNAseq'], 'deltaPSI_RNAseq', None, True, 'RNAseq_vs_RT_PSIall_labelsOnly', True)
+        correlation_scatter(['exon_size_RNAseq', 'geneSymbol_RNAseq'], 'exon_size_RNAseq', 'Exon Size', False, 'RNAseq_vs_RT_PSIall_exonHue', True)
 
 '''bioinformatic analyses of RT stuff'''
-if args.part4 == True:
-    '''getting the dataframe and all the pre stats ready for analysis'''
-    if args.a == True:
-        df_all = pandas.read_csv('curveValidation_withfits_original.csv')
-
-        #needs wonky conversion to get int from the lists which stored as a string from file to run in this script
-        def convert_to_list(s):
-            s = s[1:-2]
-            s = s.split(',')
-            s = [float(x) for x in s]
-            return s
-
-        cols = ['IncLevel_d0', 'IncLevel_d100', 'IncLevel_d170', 'IncLevel_d250', 'IncLevel_d280', 'IncLevel_d1000']
-        for col in cols:
-            df_all[col] = df_all.apply(lambda x: convert_to_list(x[col]), axis = 1)
-
-        #add deltaPSI columns
-        df_all['deltaPSI'] = df_all.apply(lambda x: abs(x['top'] - x['bottom']), axis = 1)
-
-        #more data for readcounts
-        df_fitstats = pandas.read_pickle('MBNLeventlist_fitstats_HEK.pkl')
-        #adds indexers to merge two dataframes
-        df_fitstats['indexer'] = df_fitstats.apply(lambda x: f'{x.geneSymbol}:{x.exonStart_0base}-{x.exonEnd}', axis = 1)
-        df_all['indexer'] = df_all.apply(lambda x: (f'{x.geneSymbol}:{x.exonStart_0base}-{x.exonEnd}'), axis = 1)
-        #only want readcounts
-        df_fitstats = df_fitstats[['indexer','IJC_SAMPLE_1_avg_d0', 'SJC_SAMPLE_1_avg_d0', 'IJC_SAMPLE_2_avg_d100', 'SJC_SAMPLE_2_avg_d100',
-                                    'IJC_SAMPLE_2_avg_d170', 'SJC_SAMPLE_2_avg_d170', 'IJC_SAMPLE_2_avg_d250', 'SJC_SAMPLE_2_avg_d250',
-                                    'IJC_SAMPLE_2_avg_d280', 'SJC_SAMPLE_2_avg_d280', 'IJC_SAMPLE_2_avg_d1000', 'SJC_SAMPLE_2_avg_d1000']]
-        #merge dfs
-        df_all = df_all.merge(df_fitstats, how = 'inner', on = 'indexer').drop(columns = 'Unnamed: 0')
-
-        #calculate sum of the avg reads for all samples
-        df_all['counts_d0'] = df_all.apply(lambda x: (x.IJC_SAMPLE_1_avg_d0 + x.SJC_SAMPLE_1_avg_d0), axis = 1)
-        df_all['counts_d100'] = df_all.apply(lambda x: (x.IJC_SAMPLE_2_avg_d100 + x.SJC_SAMPLE_2_avg_d100), axis = 1)
-        df_all['counts_d170'] = df_all.apply(lambda x: (x.IJC_SAMPLE_2_avg_d170 + x.SJC_SAMPLE_2_avg_d170), axis = 1)
-        df_all['counts_d250'] = df_all.apply(lambda x: (x.IJC_SAMPLE_2_avg_d250 + x.SJC_SAMPLE_2_avg_d250), axis = 1)
-        df_all['counts_d280'] = df_all.apply(lambda x: (x.IJC_SAMPLE_2_avg_d100 + x.SJC_SAMPLE_2_avg_d280), axis = 1)
-        df_all['counts_d1000'] = df_all.apply(lambda x: (x.IJC_SAMPLE_2_avg_d1000 + x.SJC_SAMPLE_2_avg_d1000), axis = 1)
-        df_all['total_avg_reads'] = df_all.apply(lambda x: (x.IJC_SAMPLE_1_avg_d0 + x.SJC_SAMPLE_1_avg_d0 + x.IJC_SAMPLE_2_avg_d100 + x.SJC_SAMPLE_2_avg_d100 + x.IJC_SAMPLE_2_avg_d170 + x.SJC_SAMPLE_2_avg_d170 + x.IJC_SAMPLE_2_avg_d250 + x.SJC_SAMPLE_2_avg_d250 + x.IJC_SAMPLE_2_avg_d280 + x.SJC_SAMPLE_2_avg_d280 + x.IJC_SAMPLE_2_avg_d1000), axis = 1)
-        df_all['log(total_reads)'] = df_all.apply(lambda x: math.log10(x.total_avg_reads), axis = 1)
-
-        #grab just the RT data
-        df_rt = df_all[df_all['method'] == 'RT-PCR']
-        #remove extra columns
-        df_rt = df_rt[['GeneID', 'geneSymbol', 'chr', 'strand', 'exonStart_0base', 'exonEnd',
-           'upstreamES', 'upstreamEE', 'downstreamES', 'downstreamEE',
-           'IncLevel_d0', 'IncLevel_d100', 'IncLevel_d170', 'IncLevel_d250',
-           'IncLevel_d280', 'IncLevel_d1000', 'IncLevel_avg_d0',
-           'IncLevel_avg_d100', 'IncLevel_avg_d170', 'IncLevel_avg_d250',
-           'IncLevel_avg_d280', 'IncLevel_avg_d1000', 'method', 'RSS', 'LogRSS',
-           'top', 'bottom', 'LogEC50', 'slope', 'pooled_StDev', 'deltaPSI',
-           'indexer']]
-        df_rt = df_rt.reset_index()
-
-        ########### get sequences ###########
-        #function to convert df to a bed file format
-        def makeBed(df):
-            #up exon coordinates
-            #copy of data and saves to new dataframe
-            df_upExon = pandas.DataFrame(df[['chr', 'upstreamES', 'upstreamEE', 'geneSymbol', 'strand']].copy())
-            #adds blank columns to make strand column in proper place
-            df_upExon.insert(4, 'blank', '1')
-            #removes column titles
-            df_upExon = df_upExon.set_axis([1, 2, 3, 4, 5, 6], axis = 1)
-
-            #upintron coordinates
-            df_upIntron = pandas.DataFrame(df[['chr', 'upstreamEE', 'exonStart_0base', 'geneSymbol', 'strand']].copy())
-            df_upIntron.insert(4, 'blank', '1')
-            df_upIntron = df_upIntron.set_axis([1, 2, 3, 4, 5, 6], axis = 1)
-            #AS exon coordinates
-            df_exon = pandas.DataFrame(df[['chr', 'exonStart_0base', 'exonEnd', 'geneSymbol', 'strand']].copy())
-            df_exon.insert(4, 'blank', '1')
-            df_exon = df_exon.set_axis([1, 2, 3, 4, 5, 6], axis = 1)
-            #downintron coordinates
-            df_downIntron = pandas.DataFrame(df[['chr', 'exonEnd', 'downstreamES', 'geneSymbol', 'strand']].copy())
-            df_downIntron.insert(4, 'blank', '1')
-            df_downIntron = df_downIntron.set_axis([1, 2, 3, 4, 5, 6], axis = 1)
-            #down exon coords
-            df_downExon = pandas.DataFrame(df[['chr', 'downstreamES', 'downstreamEE', 'geneSymbol', 'strand']].copy())
-            df_downExon.insert(4, 'blank', '1')
-            df_downExon = df_downExon.set_axis([1, 2, 3, 4, 5, 6], axis = 1)
-
-            #concats to one dataframe
-            bed_df = pandas.concat([df_upExon, df_upIntron, df_exon, df_downIntron, df_downExon])
-            #removes the 'chr' prefix of the chr column for use in getFasta from bedtools
-            bed_df[1] = bed_df[1].str[3:]
-            return bed_df
-        #makes bed files
-        # bed_out = makeBed(df_all)
-        # bed_out.to_csv('./BED_RTevents_HEK.txt', sep = '\t', index = False, header = False)
-
-
-        #matches fasta sequences back to dataframe
-        #appends sequences to dataframe using the fasta dictionary
-        def append_seq(df, seq_dict):
-            #creates indexes
-            upExon_index = '%s:%s-%s' % (df['chr'], df['upstreamES'], df['upstreamEE'])
-            upIntron_index = '%s:%s-%s' % (df['chr'], df['upstreamEE'], df['exonStart_0base'])
-            exon_index = '%s:%s-%s' % (df['chr'], df['exonStart_0base'], df['exonEnd'])
-            downIntron_index = '%s:%s-%s' % (df['chr'], df['exonEnd'], df['downstreamES'])
-            downExon_index = '%s:%s-%s' % (df['chr'], df['downstreamES'], df['downstreamEE'])
-            #matches sequences based on indexes
-            df['upExon'] = seq_dict[upExon_index]
-            df['upIntron'] = seq_dict[upIntron_index]
-            df['exon'] = seq_dict[exon_index]
-            df['downIntron'] = seq_dict[downIntron_index]
-            df['downExon'] = seq_dict[downExon_index]
-            #extra needed stuff
-            df['upIntron250'] = df['upIntron'][-251:-1]
-            df['downIntron250'] = df['downIntron'][:250]
-            df['upIntron_length'] = len(df['upIntron'])
-            df['exon_length'] = len(df['exon'])
-            df['downIntron_length'] = len(df['downIntron'])
-            df['upIntron_length250'] = len(df['upIntron250'])
-            df['downIntron_length250'] = len(df['downIntron250'])
-            return df
-        #pasrse fasta, wraps seqSplit
-        def fasta_parse(input_fasta, df):
-            seq_dict = {} #empty dictionary
-            with open(input_fasta) as handle:
-                #iterate through each fasta record
-                for record in SeqIO.FastaIO.FastaIterator(handle): #note: this utilizes a SeqRecord class
-                    indexer = 'chr' + str(record.id) #creates match indexer with chr, up and down coords
-                    indexer = indexer[:-3] #removes strand parameter
-                    seq = str(record.seq) #grabs sequence
-                    if indexer not in seq_dict:
-                        seq_dict[indexer] = seq #appends to a dictionary
-                    else:
-                        continue
-
-            #append sequences to dataframe
-            df = df.apply(lambda x: append_seq(x, seq_dict), axis = 1)
-            #add extra column stuff
-            return df
-        #parses sequences from fasta file into a dictionary and then matches to dataframe, should be unique
-        df_rt = fasta_parse('/mnt/c/Users/joeel/Desktop/Transient_Coreg_Files/NEW_bioinfo/HEK/fasta_RTevents_HEK.txt', df_rt)
-
-        ####### calculate splice site scores using maxentscan py wrapper from https://github.com/kepbod/maxentpy #########
-        #function to get SS scores for up and down 5SS and 3SS
-        def ss_scores(df):
-            #preload matrices
-            matrix5 = load_matrix5()
-            matrix3 = load_matrix3()
-            #get sequences sections
-            seq5_up = df['upExon'][-3:] + df['upIntron'][:6]
-            seq3_up = df['upIntron'][-20:] + df['exon'][:3]
-            seq5_down = df['exon'][-3:] + df['downIntron'][:6]
-            seq3_down = df['downIntron'][-20:] + df['downExon'][:3]
-            #store the sequence chunks for reference
-            df['up_5SS_seq'] = seq5_up
-            df['down_5SS_seq'] = seq5_down
-            df['up_3SS_seq'] = seq3_up
-            df['down_3SS_seq'] = seq3_down
-            #run SS scores
-            df['up_5SS'] = maxent.score5(seq5_up, matrix = matrix5)
-            df['down_5SS'] = maxent.score5(seq5_down, matrix = matrix5)
-            df['up_3SS'] = maxent.score3(seq3_up, matrix = matrix3)
-            df['down_3SS'] = maxent.score3(seq3_down, matrix = matrix3)
-            return df
-        #get splice site scores
-        df_rt = df_rt.apply(lambda x: ss_scores(x), axis = 1)
-
-        #single value of all splice site scores using methodology from the pub PMC3950716
-        #S = (up_5ss - down_5ss) + (down_3SS - up_3SS)
-        #higher S-values reflect a higher priority for pairing upI_ss5 and dnI_ss3, leading to the skipping isoform
-        df_rt['spliceCompS'] = (df_rt['up_5SS'] - df_rt['down_5SS']) + (df_rt['down_3SS'] - df_rt['up_3SS'])
-
-        ###### finding YGCYs #############
-        #suppresses copy warning
-        pandas.options.mode.chained_assignment = None  # default='warn'
-        '''function taken from part 3 and modified'''
-        #function to parse a string into kmers
-        def get_k_mer(x, k):
-           length = len(x)
-           return [x[i: i+ k].lower() for i in range(length-k+1)] #keeps all sequence information lower case
-
-        #function to get motif counts
-        def YGCY_counts(x):
-            #get counts for kmers
-            indv_count = Counter(x)
-            #gets actual YGCY total
-            y_count = indv_count['tgct'] +  indv_count['cgcc'] + indv_count['tgcc'] + indv_count['cgct']
-            return y_count
-
-        #get kmers in 250nt segment of intronic space
-        df_rt['kmer_up'] = df_rt.apply(lambda x: get_k_mer(x['upIntron'], 4), axis = 1)
-        df_rt['kmer_up250'] = df_rt.apply(lambda x: get_k_mer(x['upIntron250'], 4), axis = 1)
-        df_rt['kmer_exon'] = df_rt.apply(lambda x: get_k_mer(x['exon'], 4), axis = 1)
-        df_rt['kmer_down'] = df_rt.apply(lambda x: get_k_mer(x['downIntron'], 4), axis = 1)
-        df_rt['kmer_down250'] = df_rt.apply(lambda x: get_k_mer(x['downIntron250'], 4), axis = 1)
-        #get counts
-        df_rt['YGCY_upIntron'] = df_rt.apply(lambda x: YGCY_counts(x['kmer_up']), axis = 1)
-        df_rt['YGCY_upIntron250'] = df_rt.apply(lambda x: YGCY_counts(x['kmer_up250']), axis = 1)
-        df_rt['YGCY_exon'] = df_rt.apply(lambda x: YGCY_counts(x['kmer_exon']), axis = 1)
-        df_rt['YGCY_downIntron'] = df_rt.apply(lambda x: YGCY_counts(x['kmer_down']), axis = 1)
-        df_rt['YGCY_downIntron250'] = df_rt.apply(lambda x: YGCY_counts(x['kmer_down250']), axis = 1)
-        #get frequency
-        df_rt['YGCY_freq_upIntron250'] = df_rt['YGCY_upIntron250']/df_rt['upIntron_length250']
-        df_rt['YGCY_freq_exon250'] = df_rt['YGCY_exon']/df_rt['exon_length']
-        df_rt['YGCY_freq_downIntron250'] = df_rt['YGCY_downIntron250']/df_rt['downIntron_length250']
-        df_rt['YGCY_freq_upInt250_exon'] = (df_rt['YGCY_upIntron250'] + df_rt['YGCY_exon'])/(df_rt['upIntron_length250'] + df_rt['exon_length'])
-        df_rt['YGCY_freq_all_250'] = (df_rt['YGCY_upIntron250'] + df_rt['YGCY_exon'] + df_rt['YGCY_downIntron250'])/(df_rt['upIntron_length250'] + df_rt['exon_length'] + df_rt['downIntron_length250'])
-
-        #find YGCY motif positions
-        def findMotifs(kmer_list, flip):
-            pos_list = []
-            for i, kmer in enumerate(kmer_list):
-                if kmer == 'tgct':
-                    pos_list.append(i)
-                elif kmer == 'cgcc':
-                    pos_list.append(i)
-                elif kmer == 'tgcc':
-                    pos_list.append(i)
-                elif kmer == 'cgct':
-                    pos_list.append(i)
-            
-            #transposes upintron to negative values
-            if flip != True:
-                return pos_list
-            else:
-                return [-(250-x) for x in pos_list]
-        
-        df_rt['upInt250_YGCYpos'] = df_rt.apply(lambda x: findMotifs(x['kmer_up250'], True), axis = 1)
-        df_rt['exon_YGCYpos'] = df_rt.apply(lambda x: findMotifs(x['kmer_exon'], False), axis = 1)
-        df_rt['downInt250_YGCYpos'] = df_rt.apply(lambda x: findMotifs(x['kmer_down250'], False), axis = 1)
-        
-        ##### getting distance of YGCY to exon-intron boundaries ######
-        def getDistance(seq, kmer_list):
-            YGCY_list = ['tgct', 'cgcc', 'tgcc', 'cgct']
-            pos_list = []
-            for i, k in enumerate(kmer_list):
-                if k in YGCY_list:
-                    pos_list.append(i)
-            
-            if 'up' in seq:
-                return [-(250-x) for x in pos_list]
-            else:
-                return pos_list
-        
-        df_rt['YGCY_proxy_upIntron250'] = df_rt.apply(lambda x: getDistance('upIntron', x['kmer_up250']), axis = 1)
-        df_rt['YGCY_proxy_exon'] = df_rt.apply(lambda x: getDistance('exon', x['kmer_exon']), axis = 1)
-        df_rt['YGCY_proxy_downIntron250'] = df_rt.apply(lambda x: getDistance('downIntron', x['kmer_down250']), axis = 1)
-
-
-        ######## some extra stuff ################
-        df_rt['combined_seq'] = df_rt['upIntron'] + df_rt['exon'] + df_rt['downIntron']
-        #seq lengths
-        df_rt['seq_length_up'] = df_rt.apply(lambda x: len(x['upIntron']), axis = 1 )
-        df_rt['seq_length_exon'] = df_rt.apply(lambda x: len(x['exon']), axis = 1 )
-        df_rt['seq_length_down'] = df_rt.apply(lambda x: len(x['downIntron']), axis = 1 )
-        df_rt['seq_length_all'] = df_rt.apply(lambda x: len(x['combined_seq']), axis = 1 )
-        #GC content
-        df_rt['GC_content_up'] = df_rt.apply(lambda x:
-                    (((x['upIntron'].count('G') + x['upIntron'].count('C')) / x['seq_length_up']) * 100), axis = 1)
-        df_rt['GC_content_exon'] = df_rt.apply(lambda x:
-                    (((x['exon'].count('G') + x['exon'].count('C')) / x['seq_length_exon']) * 100), axis = 1)
-        df_rt['GC_content_down'] = df_rt.apply(lambda x:
-                    (((x['downIntron'].count('G') + x['downIntron'].count('C')) / x['seq_length_down']) * 100), axis = 1)
-        df_rt['GC_content'] = df_rt.apply(lambda x:
-                    (((x['combined_seq'].count('G') + x['combined_seq'].count('C')) / x['seq_length_all']) * 100), axis = 1)
-
-        #this checks the GC content outside of the presence of YGCYs
-        def GC_noY_all(df_rt):
-            total_YGCY = df_rt['YGCY_upIntron'] + df_rt['YGCY_exon'] + df_rt['YGCY_downIntron']
-            total_YGCY = total_YGCY * 2 #since each YGCY has a G and a C
-            GC = df_rt['combined_seq'].count('G') + df_rt['combined_seq'].count('C')
-            GCnoY = ((GC - total_YGCY) / df_rt['seq_length_all']) * 100
-            return GCnoY
-
-        df_rt['GC_content_noY'] = df_rt.apply(lambda x: GC_noY_all(x), axis = 1)
-
-        def GC_noY(df_rt, seqY, seq, seqL):
-            total_YGCY = df_rt[seqY]
-            total_YGCY = total_YGCY * 2 #since each YGCY has a G and a C
-            GC = df_rt[seq].count('G') + df_rt[seq].count('C')
-            GCnoY = ((GC - total_YGCY) / df_rt[seqL]) * 100
-            return GCnoY
-
-        df_rt['GC_content_noY_up'] = df_rt.apply(lambda x: GC_noY(x, 'YGCY_upIntron', 'upIntron', 'seq_length_up'), axis = 1)
-        df_rt['GC_content_noY_exon'] = df_rt.apply(lambda x: GC_noY(x, 'YGCY_exon', 'exon', 'seq_length_exon'), axis = 1)
-        df_rt['GC_content_noY_down'] = df_rt.apply(lambda x: GC_noY(x, 'YGCY_downIntron', 'downIntron', 'seq_length_down'), axis = 1)
-
-
-        #dataframe with inclusion or exclusion events only
-        df_rt['IncLevelDifference'] = df_rt['IncLevel_avg_d0'] - df_rt['IncLevel_avg_d1000']
-        df_rt['IncLevelDifference'] = numpy.where((df_rt['IncLevelDifference'] < 0.0), 'Inclusion', 'Exclusion')
-
-        #save upandas.ted dataframe for use later
-        df_rt.to_pickle('df_rt_final_pickle.pkl')
-        df_rt.to_excel('df_rt_final.xlsx')
-
+if args.part3 == True:
     '''plot the general distribution of curve params and swarmplots for inc/exc'''
-    if args.b == True:
+    if args.a == True:
         df_rt = pandas.read_pickle('df_rt_final_pickle.pkl')
-
-        ### extra comparisons
-        df_rt['all_150_YGCY'] = df_rt['YGCY_upIntron250'] + df_rt['YGCY_exon'] + df_rt['YGCY_downIntron250']
-        df_rt['up250+exon_YGCY'] = df_rt['YGCY_upIntron250'] + df_rt['YGCY_exon']
 
         ###### slope and ec50 dist all ########
         #vertical orentation
@@ -759,7 +468,7 @@ if args.part4 == True:
         ax[1].set_ylabel('RT-PCR LogEC50', fontsize = 15)
         ax[0].tick_params(axis = 'both', which = 'major', labelsize = 15)
         ax[1].tick_params(axis = 'both', which = 'major', labelsize = 15)
-        plt.savefig('./plots/RT_only/curvefit_rtOnly_swarmAll_vertical.tiff', dpi = 600, format = 'png')
+        plt.savefig('./plots/RT_only/curvefit_rtOnly_swarmAll_vertical.tiff', dpi = 600)
         plt.close()
 
         #horizontal orientation
@@ -779,7 +488,7 @@ if args.part4 == True:
         ax[1].set_ylabel('RT-PCR LogEC50', fontsize = 15)
         ax[0].tick_params(axis = 'both', which = 'major', labelsize = 15)
         ax[1].tick_params(axis = 'both', which = 'major', labelsize = 15)
-        plt.savefig('./plots/RT_only/curvefit_rtOnly_swarmAll_horizontal.tiff', dpi = 600, format = 'png')
+        plt.savefig('./plots/RT_only/curvefit_rtOnly_swarmAll_horizontal.tiff', dpi = 600)
         plt.close()
 
         '''compares inclusion and exclusion events via swarmplot, due to sample size assume non-parametric tests'''
@@ -818,7 +527,7 @@ if args.part4 == True:
             plt.yticks(fontsize = 22)
             plt.rc('axes', labelsize = 22)
             plt.tight_layout()
-            plt.savefig('./plots/RT_only/stripplots/non-parametric/%s_swarm.tiff' % title, dpi = 600, format = 'png')
+            plt.savefig('./plots/RT_only/stripplots/non-parametric/%s_swarm.tiff' % title, dpi = 600)
             plt.close()
           
         #removes top and tight spines
@@ -830,9 +539,9 @@ if args.part4 == True:
         compareIncExc('LogEC50', 'RT-PCR LogEC50', 'IncLevel_vs_LogEC50')
   
 '''some RNAseq only stuff'''
-if args.part5 == True:
+if args.part4 == True:
     #this is taken from MBNL_HEK_pipeline_cleaned.py part4, it contains all the RNAseq events
-    df_all = pandas.read_pickle('correlation_pickle.pkl')
+    df_all = pandas.read_pickle('MBNLeventlist_curvefit_HEK.pkl')
     
     '''general comparison between inclusion and exclusion events'''
     if args.a == True:
@@ -872,7 +581,7 @@ if args.part5 == True:
                 plt.yticks(fontsize = 22)
                 plt.rc('axes', labelsize = 22)
                 plt.tight_layout()
-                plt.savefig('./plots/swarmplots/%s_swarm.tiff' % title, dpi = 600, format = 'png')
+                plt.savefig('./plots/swarmplots/%s_swarm.tiff' % title, dpi = 600)
                 plt.close()
 
         #removes top and tight spines
