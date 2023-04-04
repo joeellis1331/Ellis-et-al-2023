@@ -2,27 +2,15 @@
 
 import argparse
 import traceback
-import os
 import numpy
 import pandas
 from statistics import mean
 import matplotlib
 import matplotlib.pyplot as plt
-import seaborn as sns
 import math
-from scipy import stats
-from scipy.stats import ttest_ind
+import itertools
 from scipy.optimize import curve_fit
-from scipy.stats import f_oneway
-from sklearn.preprocessing import StandardScaler
-from sklearn.decomposition import PCA
-from statsmodels.stats.multicomp import pairwise_tukeyhsd
-from Bio import SeqIO
-import re
-from collections import Counter
-from maxentpy import maxent
-from maxentpy.maxent import load_matrix5, load_matrix3
-
+from scipy.stats import norm
 
 #set up ArgumentParser
 parser = argparse.ArgumentParser(description = "curve fitting")
@@ -153,9 +141,10 @@ if args.part2 == True:
                 -x data is log(dose + 1) so the 0 point can be used
                 -the final cellular concentration is 100 fold less (ie. d100 --> d1)'''
             #set x and y data
-            xdata = [math.log10(1), math.log10(2), math.log10(2.7), math.log10(3.5), math.log10(3.8), math.log10(11)]
-            ydata = [row.IncLevel_avg_d0, row.IncLevel_avg_d100, row.IncLevel_avg_d170, row.IncLevel_avg_d250, row.IncLevel_avg_d280, row.IncLevel_avg_d1000]
-
+            xdata = list(itertools.repeat(math.log10(1), len(row.IncLevel_d0))) + list(itertools.repeat(math.log10(2), len(row.IncLevel_d100)))\
+                + list(itertools.repeat(math.log10(2.7), len(row.IncLevel_d170))) + list(itertools.repeat(math.log10(3.5), len(row.IncLevel_d250)))\
+                + list(itertools.repeat(math.log10(3.8), len(row.IncLevel_d280))) + list(itertools.repeat(math.log10(11), len(row.IncLevel_d1000)))
+            ydata = row.IncLevel_d0 + row.IncLevel_d100 + row.IncLevel_d170 + row.IncLevel_d250 + row.IncLevel_d280 + row.IncLevel_d1000
             ############## find standard deviation for each ydata point #####################################
             yerr = [numpy.std(row.IncLevel_d0), numpy.std(row.IncLevel_d100), numpy.std(row.IncLevel_d170),
                     numpy.std(row.IncLevel_d250), numpy.std(row.IncLevel_d280), numpy.std(row.IncLevel_d1000)]
@@ -208,6 +197,18 @@ if args.part2 == True:
                 df_all.at[row.Index, 'stderr_LogEC50'] = round(stderr[2], 2)
                 df_all.at[row.Index, 'stderr_slope'] = round(stderr[3], 1)
 
+                #confidence interval calculations
+                def calc_ci(ci, param, stderr):
+                    z = norm.ppf((1.0 + ci)/2)
+                    lower_ci = param - (z * stderr)
+                    upper_ci = param + (z * stderr)
+                    return lower_ci, upper_ci
+                
+                df_all.at[row.Index, 'top_lowCI'], df_all.at[row.Index, 'top_upCI'] = calc_ci(0.95, (max([popt[0], popt[1]])), stderr[0])
+                df_all.at[row.Index, 'bottom_lowCI'], df_all.at[row.Index, 'bottom_upCI'] = calc_ci(0.95, (min([popt[0], popt[1]])), stderr[1])
+                df_all.at[row.Index, 'LogEC50_lowCI'], df_all.at[row.Index, 'LogEC50_upCI'] = calc_ci(0.95, popt[2], stderr[2])
+                df_all.at[row.Index, 'slope_lowCI'], df_all.at[row.Index, 'slope_upCI'] = calc_ci(0.95, popt[3], stderr[3])
+
                 #appends paramters to DataFrame
                 df_all.at[row.Index, 'top'] = max([popt[0], popt[1]])
                 df_all.at[row.Index, 'bottom'] = min([popt[0], popt[1]])
@@ -235,9 +236,11 @@ if args.part2 == True:
     
         #takes parameters from text file and filters based on something, then plots curves
         def plot_curves(ind):
-            xdata = [math.log10(1), math.log10(2), math.log10(2.7), math.log10(3.5), math.log10(3.8), math.log10(11)]
-            ydata = [df_all.iloc[ind].IncLevel_avg_d0, df_all.iloc[ind].IncLevel_avg_d100, df_all.iloc[ind].IncLevel_avg_d170, df_all.iloc[ind].IncLevel_avg_d250, df_all.iloc[ind].IncLevel_avg_d280, df_all.iloc[ind].IncLevel_avg_d1000]
-
+            xdata = list(itertools.repeat(math.log10(1), len(df_all.iloc[ind].IncLevel_d0))) + list(itertools.repeat(math.log10(2), len(df_all.iloc[ind].IncLevel_d100)))\
+                + list(itertools.repeat(math.log10(2.7), len(df_all.iloc[ind].IncLevel_d170))) + list(itertools.repeat(math.log10(3.5), len(df_all.iloc[ind].IncLevel_d250)))\
+                + list(itertools.repeat(math.log10(3.8), len(df_all.iloc[ind].IncLevel_d280))) + list(itertools.repeat(math.log10(11), len(df_all.iloc[ind].IncLevel_d1000)))
+            ydata = df_all.iloc[ind].IncLevel_d0 + df_all.iloc[ind].IncLevel_d100 + df_all.iloc[ind].IncLevel_d170\
+                  + df_all.iloc[ind].IncLevel_d250 + df_all.iloc[ind].IncLevel_d280 + df_all.iloc[ind].IncLevel_d1000
             ############## find std dev #####################################
             yerr = [numpy.std(df_all.iloc[ind].IncLevel_d0), numpy.std(df_all.iloc[ind].IncLevel_d100), numpy.std(df_all.iloc[ind].IncLevel_d170),
                     numpy.std(df_all.iloc[ind].IncLevel_d250), numpy.std(df_all.iloc[ind].IncLevel_d280), numpy.std(df_all.iloc[ind].IncLevel_d1000)]
@@ -248,14 +251,15 @@ if args.part2 == True:
             #RNAseq 
             #use 3 filters before plotting actual curves
             #residual sum of squares cutoff
-            if df_all.iloc[ind].LogRSS <= 1.5:
+            med = df_all['LogRSS'].median()
+            if df_all.iloc[ind].LogRSS <= med:
                 #cutoff for top and bottom to be realistic
                 if (df_all.iloc[ind].top <= 100.0) and (df_all.iloc[ind].bottom >= 0.0):
                     #cutoff for slope, lets say 16, thats 2 times stacy's published RT for MBNL2
                     if df_all.iloc[ind].slope < 16.0:
                         #plots actual datapoints with error bars
                         plt.plot(xdata, ydata, 'o', c = 'black')
-                        plt.errorbar(xdata, ydata, yerr = yerr, ls = 'none', c = 'black', alpha = 0.5, capsize = 4) #plots errors bars
+                        plt.errorbar(xdata, ydata, ls = 'none', c = 'black', alpha = 0.5, capsize = 4) #plots errors bars
 
                         #plot the curve
                         x = numpy.linspace(-0.5, 1.5, num = 100) #returns evenly spaced numbers over a certain interval (start, stop, num = int)
@@ -267,40 +271,45 @@ if args.part2 == True:
                         plt.plot(x, y,  c = 'orange', label = 'RNAseq fit') #plots sigmoid fit
 
                         #appends parameters for table plotting to array
-                        top_table = f'{round(max([popt[0], popt[1]]), 1)}{plus_minus}{df_all.iloc[ind].stderr_top}'
-                        bottom_table = f'{round(min([popt[0], popt[1]]), 1)}{plus_minus}{df_all.iloc[ind].stderr_bottom}'
-                        ec50_table = f'{round(popt[3], 2)}{plus_minus}{df_all.iloc[ind].stderr_LogEC50}'
-                        slope_table = f'{round(popt[2], 2)}{plus_minus}{df_all.iloc[ind].stderr_slope}'
-                        r_sq_table = f'{round(df_all.iloc[ind].R_sq, 3)}'
-                        cellText = [[top_table, bottom_table, ec50_table, slope_table, r_sq_table]] #need extra brackets to create 2D array
+                        top_table = f'{round(max([popt[0], popt[1]]), 1)}'
+                        bottom_table = f'{round(min([popt[0], popt[1]]), 1)}'
+                        ec50_table = f'{round(popt[3], 2)}'
+                        slope_table = f'{round(popt[2], 1)}'
+                        r_sq_table = f'{round(df_all.iloc[ind].R_sq, 2)}'
+                        top_ci = f'{round(df_all.iloc[ind].top_lowCI, 1)}-{round(df_all.iloc[ind].top_upCI, 1)}'
+                        bottom_ci = f'{round(df_all.iloc[ind].bottom_lowCI, 1)}-{round(df_all.iloc[ind].bottom_upCI, 1)}'
+                        ec50_ci = f'{round(df_all.iloc[ind].LogEC50_lowCI, 2)}-{round(df_all.iloc[ind].LogEC50_upCI, 2)}'
+                        slope_ci = f'{round(df_all.iloc[ind].slope_lowCI, 1)}-{round(df_all.iloc[ind].slope_upCI, 1)}'
+                        cellText = [['Best-fit', top_table, bottom_table, ec50_table, slope_table, r_sq_table], 
+                                    ['95% CI', top_ci, bottom_ci, slope_ci, ec50_ci, None]] 
                         
                         #plots table
-                        colLabels = ['$\\bf{Top}$', '$\\bf{Bottom}$', '$\\bf{Slope}$', '$\\bf{LogEC50}$', '$\\bf{R\u00b2}$'] #uses TeX code
+                        colLabels = [None, '$\\bf{Top}$', '$\\bf{Bottom}$', '$\\bf{Slope}$', '$\\bf{LogEC50}$', '$\\bf{R\u00b2}$'] #uses TeX code
                         colColours = ['lightgrey' for x in range(len(colLabels))]
+                        #colWidths = [0.125, 0.193, 0.193, 0.193, 0.193, 0.1]
                         tabl = plt.table(cellText = cellText, cellLoc = 'center', colLabels = colLabels, colColours = colColours, colLoc = 'center', loc = 'top')
                         #allows me to set fontsize
                         tabl.auto_set_font_size(False)
-                        tabl.set_fontsize(11.5)
+                        tabl.set_fontsize(10.5)
                         #changing cell heights
                         tabl_props = tabl.properties()
                         tabl_cells = tabl_props['children']
                         for cell in tabl_cells: cell.set_height(0.075)
 
                         #final plot adjustments
-                        plt.subplots_adjust(top = 0.80)
+                        plt.subplots_adjust(top = 0.8)
                         plt.legend(loc = 'best')
                         plt.ylabel('PSI', fontsize = 'xx-large')
                         plt.xlabel('log[(dox + 1)]', fontsize = 'xx-large')
                         plt.xticks(ticks = [-0.5, -0.25, 0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5], labels = [-0.5, '', 0, '', 0.5, '', 1.0, '', 1.5], fontsize = 17)
                         plt.yticks(fontsize = 17)
-                        plt.title(f'{df_all.iloc[ind].geneSymbol}', pad = 50, fontsize = 'xx-large', style = 'italic')
-                        plt.suptitle(f'exon coord:{df_all.iloc[ind].exonStart_0base}-{df_all.iloc[ind].exonEnd}', x = 0.55, y = 0.84, fontsize = 'xx-large')
+                        tit = f'{df_all.iloc[ind].geneSymbol}\nexon coord: {df_all.iloc[ind].exonStart_0base}-{df_all.iloc[ind].exonEnd}'
+                        plt.title(tit, pad = 50, fontsize = 'xx-large', style = 'italic')
                         plt.tight_layout()
                         name = f'{df_all.iloc[ind].geneSymbol}_{df_all.iloc[ind].exonStart_0base}-{df_all.iloc[ind].exonEnd}'
                         plt.savefig(f'./plots/curve_fits/{name}.tiff', dpi = 300, format = 'tiff')
                         plt.close()
 
-        
         #reads in dataframe
         df_all = pandas.read_pickle('/mnt/c/Users/joeel/Desktop/Transient_Coreg_Files/NEW_bioinfo/HEK/MBNLeventlist_curvefit_HEK.pkl')
         #actual function call
