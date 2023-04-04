@@ -8,7 +8,7 @@
 #SBATCH --time=48:00:00                 # Time limit hrs:min:sec
 #SBATCH --output=serial_test_%j.log     # Standard output and error log
 
-### $1=overall run directory, $2=se.mats, $3=fasta file, $4=maps output directory
+### $1=overall run directory, $2=se.mats.jcec, $3=fasta file, $4=maps output directory
 
 motif_pipe() {
 
