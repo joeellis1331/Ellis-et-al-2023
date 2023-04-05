@@ -161,8 +161,8 @@ if args.part1 == True:
         #RNAseq data
         if df_all.iloc[ind].method == 'RNAseq':
             #plots actual datapoints with error bars
-            plt.plot(xdata, ydata, 'o', c = 'black')
-            plt.errorbar(xdata, ydata, yerr = yerr, ls = 'none', c = 'black', alpha = 0.5, capsize = 4) #plots errors bars
+            plt.plot(xdata, ydata, 'o', c = 'black', fillstyle = 'none')
+            plt.errorbar(xdata, ydata, yerr = yerr, ls = 'none', c = 'darkorange', alpha = 0.75, capsize = 5) #plots errors bars
 
             #plot the curve
             x = numpy.linspace(-0.5, 1.5, num = 100) #returns evenly spaced numbers over a certain interval (start, stop, num = int)
@@ -171,7 +171,7 @@ if args.part1 == True:
             else:
                 popt = [df_all.iloc[ind].bottom, df_all.iloc[ind].top, df_all.iloc[ind].LogEC50, df_all.iloc[ind].slope]
             y = sigmoid(x, *popt) #fits sigmoid curve to y data
-            plt.plot(x, y,  c = 'orange', label = '%s fit' % df_all.iloc[ind].method) #plots sigmoid fit
+            plt.plot(x, y,  c = 'darkorange', label = '%s fit' % df_all.iloc[ind].method) #plots sigmoid fit
 
             #appends parameters for table plotting to array
             top_table = f'{round(max([popt[0], popt[1]]), 1)}'
@@ -191,8 +191,8 @@ if args.part1 == True:
         #RT-PCR data
         else:
             #plots actual datapoints with error bars
-            plt.plot(xdata, ydata, 'o', c = 'black')
-            plt.errorbar(xdata, ydata, yerr = yerr, ls = 'none', c = 'black', alpha = 0.5, capsize = 4) #plots errors bars
+            plt.plot(xdata, ydata, 'o', c = 'black', fillstyle = 'none')
+            plt.errorbar(xdata, ydata, yerr = yerr, ls = 'none', c = 'purple', alpha = 0.75, capsize = 5) #plots errors bars
 
             #plot the curve
             x = numpy.linspace(-0.5, 1.5, num = 100) #returns evenly spaced numbers over a certain interval (start, stop, num = int)
@@ -265,35 +265,55 @@ if args.part1 == True:
 
 '''compare splicing outcomes between RNAseq and RT_PCR'''
 if args.part2 == True:
+    #load df
     df_all = pandas.read_csv('curveValidation_withfits.csv')
-
-    #needs wonky conversion to get int from the lists which stored as a string from file to run in this script
-    def convert_to_list(s):
-        s = s[1:-2]
-        s = s.split(',')
-        s = [float(x) for x in s]
-        return s
-
-    cols = ['IncLevel_d0', 'IncLevel_d100', 'IncLevel_d170', 'IncLevel_d250', 'IncLevel_d280', 'IncLevel_d1000']
-    for col in cols:
-        df_all[col] = df_all.apply(lambda x: convert_to_list(x[col]), axis = 1)
-
     #add deltaPSI columns
     df_all['deltaPSI'] = df_all.apply(lambda x: abs(x['top'] - x['bottom']), axis = 1)
+    #adds indexers to merge two dataframes
     df_all['indexer'] = df_all.apply(lambda x: (f'{x.geneSymbol}:{x.exonStart_0base}-{x.exonEnd}'), axis = 1)
-    #concat the datasets so each even is on a single row
+   
+    #split dataframe on method
     df_1 = df_all[df_all['method'] == 'RNAseq'].reset_index().add_suffix('_RNAseq')
     df_2 = df_all[df_all['method'] == 'RT-PCR']
-    #remove extra columns
-    df_2 = df_2[['GeneID', 'geneSymbol', 'chr', 'strand', 'exonStart_0base', 'exonEnd',
-       'upstreamES', 'upstreamEE', 'downstreamES', 'downstreamEE',
-       'IncLevel_d0', 'IncLevel_d100', 'IncLevel_d170', 'IncLevel_d250',
-       'IncLevel_d280', 'IncLevel_d1000', 'IncLevel_avg_d0',
-       'IncLevel_avg_d100', 'IncLevel_avg_d170', 'IncLevel_avg_d250',
-       'IncLevel_avg_d280', 'IncLevel_avg_d1000', 'method', 'RSS', 'LogRSS',
-       'top', 'bottom', 'LogEC50', 'slope', 'pooled_StDev', 'deltaPSI', 'indexer']]
+    #remove unnecessary columns
+    df_2 = df_2.drop(['GeneID', 'geneSymbol', 'chr', 'strand', 'exonStart_0base', 'exonEnd',
+       'upstreamES', 'upstreamEE', 'downstreamES', 'downstreamEE', 'exon_size', 'expected_incl_size', 'expected_exc_size'], axis = 1)
     df_2 = df_2.reset_index().add_suffix('_RT-PCR')
-    df_all = pandas.concat([df_1, df_2], axis = 1).drop(columns = 'index_RNAseq')
+
+    #concat two frames
+    df_all = pandas.concat([df_1, df_2], axis = 1)
+
+    ##get read counts
+     #get readcount data since I hard coded the RT stuff
+    df_orig = pandas.read_pickle('MBNLeventlist_original_HEK.pkl')
+    df_orig['indexer_RNAseq'] = df_orig.apply(lambda x: f'{x.geneSymbol}:{x.exonStart_0base}-{x.exonEnd}', axis = 1)
+    #only want readcounts
+    df_orig = df_orig[['indexer_RNAseq','IJC_SAMPLE_1_d0', 'SJC_SAMPLE_1_d0', 'IJC_SAMPLE_2_d100', 'SJC_SAMPLE_2_d100', 'IJC_SAMPLE_2_d170', 'SJC_SAMPLE_2_d170',
+                        'IJC_SAMPLE_2_d250', 'SJC_SAMPLE_2_d250', 'IJC_SAMPLE_2_d280', 'SJC_SAMPLE_2_d280', 'IJC_SAMPLE_2_d1000', 'SJC_SAMPLE_2_d1000',
+                        'IJC_SAMPLE_1_avg_d0', 'SJC_SAMPLE_1_avg_d0', 'IJC_SAMPLE_2_avg_d100', 'SJC_SAMPLE_2_avg_d100',
+                        'IJC_SAMPLE_2_avg_d170', 'SJC_SAMPLE_2_avg_d170', 'IJC_SAMPLE_2_avg_d250', 'SJC_SAMPLE_2_avg_d250',
+                        'IJC_SAMPLE_2_avg_d280', 'SJC_SAMPLE_2_avg_d280', 'IJC_SAMPLE_2_avg_d1000', 'SJC_SAMPLE_2_avg_d1000']]
+
+    #merge dfs
+    df_all = df_all.merge(df_orig, how = 'inner', on = 'indexer_RNAseq')
+    #custom cols to drop out of laziness
+    df_all = df_all.drop(['Unnamed: 0_RNAseq', 'method_RNAseq', 'indexer_RNAseq', 'index_RNAseq', 'index_RT-PCR',
+                           'Unnamed: 0_RT-PCR', 'method_RT-PCR', 'indexer_RT-PCR'], axis = 1)
+    
+   
+    #needs wonky conversion to get int from the lists which stored as a string from file to run in this script
+    def convert_to_list(s):
+        if isinstance(s, str):
+            s = s[1:-2]
+            s = s.split(',')
+            s = [float(x) for x in s]
+            return s
+    
+    #conversion
+    cols = ['IncLevel_d0_RNAseq', 'IncLevel_d100_RNAseq', 'IncLevel_d170_RNAseq', 'IncLevel_d250_RNAseq', 'IncLevel_d280_RNAseq', 'IncLevel_d1000_RNAseq',
+            'IncLevel_d0_RT-PCR', 'IncLevel_d100_RT-PCR', 'IncLevel_d170_RT-PCR', 'IncLevel_d250_RT-PCR', 'IncLevel_d280_RT-PCR', 'IncLevel_d1000_RT-PCR']
+    for col in cols:
+        df_all[col] = df_all.apply(lambda x: convert_to_list(x[col]), axis = 1)
 
     '''plot correlations, all events included'''
     if args.a == True:
@@ -330,7 +350,7 @@ if args.part2 == True:
         plt.yticks(fontsize = 17)
         plt.title('Slope', fontsize = 'xx-large')
         plt.tight_layout()
-        plt.savefig(f'./plots/curve_validations/RNAseq_vs_RT_slope.tiff', dpi = 600)
+        plt.savefig(f'./plots/curve_validations/correlations/RNAseq_vs_RT_slope.tiff', dpi = 600)
         plt.close()
         
         
@@ -364,7 +384,7 @@ if args.part2 == True:
         plt.yticks(fontsize = 17)
         plt.title('LogEC50', fontsize = 'xx-large')
         plt.tight_layout()
-        plt.savefig(f'./plots/curve_validations/RNAseq_vs_RT_LogEC50.tiff', dpi = 600)
+        plt.savefig(f'./plots/curve_validations/correlations/RNAseq_vs_RT_LogEC50.tiff', dpi = 600)
         plt.close()
 
         ######################################################################################
@@ -379,7 +399,6 @@ if args.part2 == True:
             df2 = pandas.melt(df_all, id_vars = id_vars, value_vars = val_cols_rt, var_name = 'variable_RT-PCR', value_name = 'value_RT-PCR')
             df_xy = pandas.concat([df1, df2], axis = 1) #merges dfs
             df_xy = df_xy.loc[:,~df_xy.columns.duplicated()] #drops duplicate deltaPSI column
-            df_xy.to_csv('test_1.csv')
         
             #this if statement plots the event labels instead of points, know which points belong to which event
             if labels_only == True:
@@ -435,13 +454,149 @@ if args.part2 == True:
             plt.xticks(fontsize = 17)
             plt.yticks(fontsize = 17)
             plt.tight_layout()
-            plt.savefig(f'./plots/curve_validations/{name}.tiff', dpi = 600)
+            plt.savefig(f'./plots/curve_validations/correlations/{name}.tiff', dpi = 600)
             plt.close()
         
         correlation_scatter(['deltaPSI_RNAseq', 'geneSymbol_RNAseq'], None, None, False, 'RNAseq_vs_RT_PSIall', True)
         correlation_scatter(['deltaPSI_RNAseq', 'geneSymbol_RNAseq'], 'deltaPSI_RNAseq', None, True, 'RNAseq_vs_RT_PSIall_labelsOnly', True)
         correlation_scatter(['exon_size_RNAseq', 'geneSymbol_RNAseq'], 'exon_size_RNAseq', 'Exon Size', False, 'RNAseq_vs_RT_PSIall_exonHue', True)
 
+
+        ########################################################################
+        ###### correlate exon size and PSI diff ###########
+        #########################################################################
+        id_vars = ['exon_size_RNAseq', 'geneSymbol_RNAseq']
+        #reorganize dataframe to make xy plot possible
+        val_cols_seq = ['IncLevel_avg_d0_RNAseq', 'IncLevel_avg_d100_RNAseq', 'IncLevel_avg_d170_RNAseq', 'IncLevel_avg_d250_RNAseq', 'IncLevel_avg_d280_RNAseq', 'IncLevel_avg_d1000_RNAseq']
+        val_cols_rt = ['IncLevel_avg_d0_RT-PCR', 'IncLevel_avg_d100_RT-PCR', 'IncLevel_avg_d170_RT-PCR', 'IncLevel_avg_d250_RT-PCR', 'IncLevel_avg_d280_RT-PCR', 'IncLevel_avg_d1000_RT-PCR']
+        df1 = pandas.melt(df_all, id_vars = id_vars, value_vars = val_cols_seq, var_name = 'variable_RNAseq', value_name = 'value_RNAseq')
+        df2 = pandas.melt(df_all, id_vars = id_vars, value_vars = val_cols_rt, var_name = 'variable_RT-PCR', value_name = 'value_RT-PCR')
+        df_xy = pandas.concat([df1, df2], axis = 1) #merges dfs
+        df_xy = df_xy.loc[:,~df_xy.columns.duplicated()] #drops duplicate deltaPSI column
+        df_xy['PSI_diff_abs'] = df_xy.apply(lambda x: (x['value_RNAseq'] - x['value_RT-PCR']), axis = 1)
+
+        #plot call
+        sns.scatterplot(data = df_xy, x = 'exon_size_RNAseq', y = 'PSI_diff_abs')
+        #regression line
+        #obtain m (slope) and b(intercept) of linear regression line
+        m, b, r_value, p_value, std_err = scipy.stats.linregress(df_xy['exon_size_RNAseq'], df_xy['PSI_diff_abs'])
+        r_sq = r_value**2
+        r_value = round(r_value, 3)
+        #pval significance
+        if p_value < 0.001:
+            p_value = "{:.2e}".format(p_value)
+        else:
+            p_value = "{:.3f}".format(p_value)
+        #add linear regression line to scatterplot
+        plt.plot(df_xy['exon_size_RNAseq'], (m * df_xy['exon_size_RNAseq'] + b), color = 'black')
+        #annotate reg line and stuff
+        m, b, r_sq = "{:.2f}".format(m), "{:.2f}".format(b), "{:.2f}".format(r_sq) #formats to two decimal places
+        fit_annot = f'y = {m}x+{b}\nR = {r_value}\np-value = {p_value}'
+        bbox = dict(edgecolor = 'black', facecolor = 'grey', alpha = 0.5, boxstyle = 'square,pad=0.25') #sets variable to keep annotate flags clean
+        plt.annotate(fit_annot, xy = (8, 42), xycoords = 'data', bbox = bbox, fontsize = 13, horizontalalignment = 'left', verticalalignment = 'center')
+
+        #final changes
+        plt.ylim(-30, 50)
+        plt.xlim(0, 400)
+        plt.xlabel('Exon Size', fontsize = 'xx-large')
+        plt.ylabel('PSI RNAseq - PSI RT-PCR', fontsize = 'xx-large')
+        plt.xticks(fontsize = 17)
+        plt.yticks(fontsize = 17)
+        plt.tight_layout()
+        plt.savefig(f'./plots/curve_validations/correlations/yExonSize_vs_xPSIdiff.tiff', dpi = 600)
+        plt.close()
+
+        ########################################################################
+        ###### correlate reads and PSI/PSI diff ###########
+        #########################################################################
+
+        df1 = df_all[['IncLevel_d0_RNAseq', 'IncLevel_d0_RT-PCR', 'IncLevel_avg_d0_RNAseq', 'IncLevel_avg_d0_RT-PCR', 'IJC_SAMPLE_1_d0', 'SJC_SAMPLE_1_d0']]
+        df2 = df_all[['IncLevel_d100_RNAseq', 'IncLevel_d100_RT-PCR', 'IncLevel_avg_d100_RNAseq', 'IncLevel_avg_d100_RT-PCR', 'IJC_SAMPLE_2_d100', 'SJC_SAMPLE_2_d100']]
+        df3 = df_all[['IncLevel_d170_RNAseq', 'IncLevel_d170_RT-PCR', 'IncLevel_avg_d170_RNAseq', 'IncLevel_avg_d170_RT-PCR', 'IJC_SAMPLE_2_d170', 'SJC_SAMPLE_2_d170']]
+        df4 = df_all[['IncLevel_d250_RNAseq', 'IncLevel_d250_RT-PCR', 'IncLevel_avg_d250_RNAseq', 'IncLevel_avg_d250_RT-PCR', 'IJC_SAMPLE_2_d250', 'SJC_SAMPLE_2_d250']]
+        df5 = df_all[['IncLevel_d280_RNAseq', 'IncLevel_d280_RT-PCR', 'IncLevel_avg_d280_RNAseq', 'IncLevel_avg_d280_RT-PCR', 'IJC_SAMPLE_2_d280', 'SJC_SAMPLE_2_d280']]
+        df6 = df_all[['IncLevel_d1000_RNAseq', 'IncLevel_d100_RT-PCR', 'IncLevel_avg_d100_RNAseq', 'IncLevel_avg_d100_RT-PCR', 'IJC_SAMPLE_2_d100', 'SJC_SAMPLE_2_d1000']]
+
+        def adjust_name(df, val):
+            df = df.rename(columns={df.columns[0]:'PSI_RNAseq', df.columns[1]:'PSI_RT-PCR', df.columns[2]:'PSIavg_RNAseq', df.columns[3]:'PSIavg_RT-PCR', df.columns[4]:'IJC', df.columns[5]:'SJC'})
+            df['dose'] = [[val, val, val]] * len(df)
+            return df
+
+        df1 = adjust_name(df1, 'd0')
+        df2 = adjust_name(df2, 'd100')
+        df3 = adjust_name(df3, 'd170')
+        df4 = adjust_name(df4, 'd250')
+        df5 = adjust_name(df5, 'd280')
+        df6 = adjust_name(df6, 'd1000')
+        
+        #concats dataframe
+        df_reads = pandas.concat([df1, df2, df3, df4, df5, df6])
+        
+        
+        '''
+        this section makes plots where the IJC+SJC is averaged and comapred to avg PSI
+        '''
+
+        #function with sums IJC and SJC from each replicate, then averages those sums for total read avg
+        def avg_reads(l1, l2):
+            s1 = l1[0] + l2[0]
+            s2 = l1[1] + l2[1]
+            s3 = l1[2] + l2[2]
+            return (s1 + s2 + s3)/3
+        
+        df_reads['ijc+sjc_avg'] = df_reads.apply(lambda x: avg_reads(x['IJC'], x['SJC']), axis = 1)
+        df_reads['PSIavg_seq-rt'] = df_reads['PSIavg_RNAseq'] - df_reads['PSIavg_RT-PCR']
+        df_reads['PSIavg_abs_seq-rt'] = numpy.abs(df_reads['PSIavg_RNAseq'] - df_reads['PSIavg_RT-PCR'])
+       
+         ########### PSI correlations with reads hue ###############################
+        #colorbar and plot
+        norm = plt.Normalize(df_reads['ijc+sjc_avg'].min(), df_reads['ijc+sjc_avg'].max())
+        #can set "Blues_r" to reverse color, make sure to adjust in scatter below
+        sm = plt.cm.ScalarMappable(cmap = "Blues", norm = norm)
+        sm.set_array([])
+        sns.scatterplot(data = df_reads, x = 'PSIavg_RNAseq', y = 'PSIavg_RT-PCR',
+                            hue = 'ijc+sjc_avg', palette = "Blues", edgecolor = 'gray', linewidth = 0.25)
+        plt.colorbar(sm).set_label('IJC+SJC Average', fontsize = 15)
+        plt.legend().remove()
+        #obtain m (slope) and b(intercept) of linear regression line
+        m, b, r_value, p_value, std_err = scipy.stats.linregress(df_reads['PSIavg_RNAseq'], df_reads['PSIavg_RT-PCR'])
+        r_sq = r_value**2
+        r_value = round(r_value, 3)
+        #pval significance
+        if p_value < 0.001:
+            p_value = "{:.2e}".format(p_value)
+        else:
+            p_value = "{:.3f}".format(p_value)
+        #add linear regression line to scatterplot
+        plt.plot(df_reads['PSIavg_RNAseq'], (m * df_reads['PSIavg_RNAseq'] + b), color = 'black')
+        #annotate reg line and stuff
+        m, b, r_sq = "{:.2f}".format(m), "{:.2f}".format(b), "{:.2f}".format(r_sq) #formats to two decimal places
+        fit_annot = f'y = {m}x+{b}\nR = {r_value}\np-value = {p_value}'
+        bbox = dict(edgecolor = 'black', facecolor = 'grey', alpha = 0.5, boxstyle = 'square,pad=0.25') #sets variable to keep annotate flags clean
+        plt.annotate(fit_annot, xy = (2, 89), xycoords = 'data', bbox = bbox, fontsize = 13, horizontalalignment = 'left', verticalalignment = 'center')
+        #final adjustments
+        plt.ylim(0, 100)
+        plt.xlim(0, 100)
+        plt.xlabel('PSI RNAseq', fontsize = 'xx-large')
+        plt.ylabel('PSI RT-PCR', fontsize = 'xx-large')
+        plt.xticks(fontsize = 17)
+        plt.yticks(fontsize = 17)
+        plt.tight_layout()
+        plt.savefig(f'./plots/curve_validations/correlations/RNAseq_vs_RT_PSIall_avg_ReadsHue.tiff', dpi = 600)
+        plt.close()
+
+        ############### reads vs PSI abs ###########
+        #####plot call for left plot
+        sns.scatterplot(data = df_reads, x = 'ijc+sjc_avg', y = 'PSIavg_abs_seq-rt')
+        plt.xscale('log')
+        plt.xlabel('IJC+SJC Average', fontsize = 'xx-large')
+        plt.ylabel('|PSI RNAseq - PSI RT-PCR|', fontsize = 'xx-large')
+        plt.xticks(fontsize = 17)
+        plt.yticks(fontsize = 17)
+        plt.tight_layout()
+        plt.savefig(f'./plots/curve_validations/correlations/yreads_vs_xPSIdiffABSs_avg.tiff', dpi = 600)
+        plt.close()
+        
 '''bioinformatic analyses of RT stuff'''
 if args.part3 == True:
     '''plot the general distribution of curve params and swarmplots for inc/exc'''
