@@ -67,11 +67,12 @@ if args.part1 == True:
             pass
 
         #subset data and remove extraneous columns
-        df = df[['GeneID', 'geneSymbol', 'chr', 'strand', 'exonStart_0base',
-                'exonEnd', 'upstreamES', 'upstreamEE', 'downstreamES', 'downstreamEE', 'IJC_SAMPLE_1_avg', 'SJC_SAMPLE_1_avg', 'IJC_SAMPLE_2_avg', 'SJC_SAMPLE_2_avg',
-                'IncLevel1', 'IncLevel1_avg', 'IncLevel2', 'IncLevel2_avg']]
-        df = df.rename(columns = {'IncLevel1_avg':('IncLevel_avg' + suf_con), 'IncLevel1':('IncLevel' + suf_con), 'IncLevel2_avg':('IncLevel_avg' + suf_dose), 'IncLevel2':('IncLevel' + suf_dose),
-                                 'IJC_SAMPLE_1_avg':('IJC_SAMPLE_1_avg' + suf_con), 'SJC_SAMPLE_1_avg':('SJC_SAMPLE_1_avg' + suf_con), 'IJC_SAMPLE_2_avg':('IJC_SAMPLE_2_avg' + suf_dose), 'SJC_SAMPLE_2_avg':('SJC_SAMPLE_2_avg' + suf_dose)})
+        df = df.rename(columns = {'IJC_SAMPLE_1':('IJC_SAMPLE_1' + suf_con), 'SJC_SAMPLE_1':('SJC_SAMPLE_1' + suf_con),
+                                'IJC_SAMPLE_2':('IJC_SAMPLE_2' + suf_dose), 'SJC_SAMPLE_2':('SJC_SAMPLE_2' + suf_dose),
+                                'IncLevel1_avg':('IncLevel_avg' + suf_con), 'IncLevel1':('IncLevel' + suf_con)
+                                  , 'IncLevel2_avg':('IncLevel_avg' + suf_dose), 'IncLevel2':('IncLevel' + suf_dose),
+                                 'IJC_SAMPLE_1_avg':('IJC_SAMPLE_1_avg' + suf_con), 'SJC_SAMPLE_1_avg':('SJC_SAMPLE_1_avg' + suf_con),
+                                   'IJC_SAMPLE_2_avg':('IJC_SAMPLE_2_avg' + suf_dose), 'SJC_SAMPLE_2_avg':('SJC_SAMPLE_2_avg' + suf_dose)})
 
         return df
 
@@ -93,9 +94,11 @@ if args.part1 == True:
 
     #reorganize columns
     df_all = df_all[['GeneID', 'geneSymbol', 'chr', 'strand', 'exonStart_0base', 'exonEnd', 'upstreamES', 'upstreamEE', 'downstreamES', 'downstreamEE',
+        'IJC_SAMPLE_1_d0', 'SJC_SAMPLE_1_d0', 'IJC_SAMPLE_2_d100', 'SJC_SAMPLE_2_d100', 'IJC_SAMPLE_2_d170', 'SJC_SAMPLE_2_d170',
+        'IJC_SAMPLE_2_d250', 'SJC_SAMPLE_2_d250', 'IJC_SAMPLE_2_d280', 'SJC_SAMPLE_2_d280', 'IJC_SAMPLE_2_d1000', 'SJC_SAMPLE_2_d1000',
         'IJC_SAMPLE_1_avg_d0', 'SJC_SAMPLE_1_avg_d0', 'IJC_SAMPLE_2_avg_d100', 'SJC_SAMPLE_2_avg_d100', 'IJC_SAMPLE_2_avg_d170', 'SJC_SAMPLE_2_avg_d170',
-        'IJC_SAMPLE_2_avg_d250', 'SJC_SAMPLE_2_avg_d250', 'IJC_SAMPLE_2_avg_d280', 'SJC_SAMPLE_2_avg_d280',
-        'IJC_SAMPLE_2_avg_d1000', 'SJC_SAMPLE_2_avg_d1000', 'IncLevel_d0', 'IncLevel_d100', 'IncLevel_d170', 'IncLevel_d250', 'IncLevel_d280', 'IncLevel_d1000',
+        'IJC_SAMPLE_2_avg_d250', 'SJC_SAMPLE_2_avg_d250', 'IJC_SAMPLE_2_avg_d280', 'SJC_SAMPLE_2_avg_d280', 'IJC_SAMPLE_2_avg_d1000', 'SJC_SAMPLE_2_avg_d1000',
+        'IncLevel_d0', 'IncLevel_d100', 'IncLevel_d170', 'IncLevel_d250', 'IncLevel_d280', 'IncLevel_d1000',
         'IncLevel_avg_d0', 'IncLevel_avg_d100', 'IncLevel_avg_d170', 'IncLevel_avg_d250', 'IncLevel_avg_d280', 'IncLevel_avg_d1000']]
 
     #save as csv and pickle for viewing or later use
