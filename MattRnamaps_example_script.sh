@@ -12,9 +12,6 @@
 
 motif_pipe() {
 
-#removes first ID col, there is a duplicate later
-awk '{$1=""}1' $2 | awk -vOFS="\t" '{$1=$1}1' > $1/temp.SE.MATS_1.txt
-
 #rename chr column to all caps to prevent removal with sed
 matt rn_cols $1/temp.SE.MATS_1.txt chr:CHR > $1/temp.SE.MATS_2.txt
 
@@ -31,4 +28,4 @@ matt rna_maps_cisbp $1/temp.SE.MATS_2.txt upstreamEE exonStart_0base exonEnd dow
  GROUP_PSI[Inclusion,Exclusion,Background] 31 50 200 $3 cisbprna_regexps -d $1/$4
 }
 
-motif_pipe ./curveFit_338_run ./EventList_curvefits_338_wBkgd.txt $fasta maps_output
+motif_pipe ./curveFit_352_run ./EventList_curvefits_352_wBkgd.txt $fasta maps_output
