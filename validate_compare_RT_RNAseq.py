@@ -39,6 +39,8 @@ matplotlib.rcParams['font.family'] = 'sans-serif'
 
 '''Generates curve fits first and saves to file
 uses that data to then plot curves for original events (no dilutions etc) with table of values on top
+
+The structure of the input excel file (df_all) is paired rows, where the first is the RNAseq and the second is the RT-PCR data for a single event.
 '''
 if args.part1 == True:
     df_all = pandas.read_excel('/mnt/c/Users/joeel/Desktop/Transient_Coreg_Files/NEW_bioinfo/HEK/MBNLeventlist_curveValidation_HEK_original.xlsx', sheet_name = 0, index_col = 0)
