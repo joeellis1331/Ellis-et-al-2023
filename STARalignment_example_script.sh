@@ -8,6 +8,8 @@
 #SBATCH --time=24:00:00               # Time limit hrs:min:sec
 #SBATCH --output=serial_test_%j.log   # Standard output and error log
 
+module load star/2.7.9a
+
 FILES="./fastqFiles/*"
 counter=0
 
