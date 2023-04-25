@@ -15,6 +15,8 @@
 
 
 Package versions:
+star              2.7.9a
+rmats-turbo       4.1.0
 seaborn           0.12.0
 scipy             1.7.3
 python            3.7.13
